@@ -1,7 +1,12 @@
-from flask import Flask, request, render_template, send_file, redirect, url_for
-import os, uuid, subprocess, glob, zipfile, shutil
+from flask import Flask, request, render_template, send_file, redirect, url_for, jsonify
+import os
+import uuid
+import subprocess
+import glob
+import zipfile
+import shutil
 import logging
-from time import sleep
+from pathlib import Path
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -10,61 +15,52 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 200 * 1024 * 1024  # 200 MB limit
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
-OUTPUT_FOLDER = os.path.join(BASE_DIR, 'output')
+# Ensure absolute paths
+BASE_DIR = Path(__file__).resolve().parent
+UPLOAD_FOLDER = BASE_DIR / 'uploads'
+OUTPUT_FOLDER = BASE_DIR / 'output'
 
 # Create folders if they don't exist
-for folder in (UPLOAD_FOLDER, OUTPUT_FOLDER):
-    os.makedirs(folder, exist_ok=True)
+UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
+OUTPUT_FOLDER.mkdir(parents=True, exist_ok=True)
 
-def force_remove_file(path):
-    """Helper function to forcefully remove a file with retries"""
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            if os.path.isfile(path):
-                os.unlink(path)  # Use unlink instead of remove
-            elif os.path.isdir(path):
-                shutil.rmtree(path, ignore_errors=True)
-            return True
-        except (OSError, PermissionError) as e:
-            if attempt < max_retries - 1:
-                sleep(0.1)  # Short delay before retry
-                continue
-            logger.error(f"Failed to remove {path} after {max_retries} attempts: {e}")
-            return False
-
-def clean_folder(folder):
-    """Helper function to clean a folder with proper error handling"""
-    success = True
-    if not os.path.exists(folder):
+def delete_directory_contents(directory):
+    """Delete all files and subdirectories in the given directory."""
+    directory = Path(directory)
+    try:
+        if directory.exists():
+            for item in directory.iterdir():
+                if item.is_file():
+                    item.unlink()
+                elif item.is_dir():
+                    shutil.rmtree(item)
         return True
-        
-    for filename in os.listdir(folder):
-        path = os.path.join(folder, filename)
-        if not force_remove_file(path):
-            success = False
-            
-    return success
+    except Exception as e:
+        logger.error(f"Error clearing directory {directory}: {e}")
+        return False
 
 @app.route('/')
 def index():
-    files = []
-    if os.path.exists(OUTPUT_FOLDER):
-        files = sorted([f for f in os.listdir(OUTPUT_FOLDER) if os.path.isfile(os.path.join(OUTPUT_FOLDER, f))])
-    return render_template('index.html', files=files)
+    # Get list of files in output directory
+    try:
+        files = []
+        if OUTPUT_FOLDER.exists():
+            files = sorted([f.name for f in OUTPUT_FOLDER.iterdir() if f.is_file()])
+        return render_template('index.html', files=files)
+    except Exception as e:
+        logger.error(f"Error in index route: {e}")
+        return render_template('index.html', files=[])
 
 @app.route('/split', methods=['POST'])
 def split_video():
     try:
-        # Clean up old files before processing
-        for folder in (UPLOAD_FOLDER, OUTPUT_FOLDER):
-            clean_folder(folder)
+        # Clear existing files first
+        delete_directory_contents(UPLOAD_FOLDER)
+        delete_directory_contents(OUTPUT_FOLDER)
 
         if 'video' not in request.files:
             return "No video file uploaded", 400
-            
+        
         video = request.files['video']
         if not video.filename:
             return "No video file selected", 400
@@ -76,104 +72,98 @@ def split_video():
         except (KeyError, ValueError):
             return "Invalid duration value", 400
 
-        # Save upload
-        original_name = os.path.splitext(video.filename)[0]
-        filename = f"{uuid.uuid4().hex}_{video.filename.replace(' ', '_')}"
-        video_path = os.path.join(UPLOAD_FOLDER, filename)
+        # Save upload with safe filename
+        original_name = Path(video.filename).stem
+        filename = f"{uuid.uuid4().hex}_{Path(video.filename).name.replace(' ', '_')}"
+        video_path = UPLOAD_FOLDER / filename
         
-        video.save(video_path)
+        video.save(str(video_path))
 
-        # Split using FFmpeg segment muxer
-        segment_pattern = os.path.join(OUTPUT_FOLDER, 'part_%03d.mp4')
+        # Split using FFmpeg
+        segment_pattern = str(OUTPUT_FOLDER / 'part_%03d.mp4')
         cmd = [
             'ffmpeg', '-y',
-            '-i', video_path,
-            '-c', 'copy', '-map', '0',
+            '-i', str(video_path),
+            '-c', 'copy',
+            '-map', '0',
             '-f', 'segment',
             '-segment_time', str(duration),
             '-reset_timestamps', '1',
             segment_pattern
         ]
-        
+
         try:
-            result = subprocess.run(
-                cmd, 
-                check=True, 
-                stdout=subprocess.PIPE, 
-                stderr=subprocess.PIPE,
+            process = subprocess.run(
+                cmd,
+                check=True,
+                capture_output=True,
                 text=True
             )
         except subprocess.CalledProcessError as e:
             logger.error(f"FFmpeg error: {e.stderr}")
-            # Clean up the uploaded file if FFmpeg fails
-            force_remove_file(video_path)
             return "Error processing video", 500
 
-        # Clean up the uploaded file after successful processing
-        force_remove_file(video_path)
-
-        # Check if any parts were created
-        parts = sorted(glob.glob(os.path.join(OUTPUT_FOLDER, 'part_*.mp4')))
+        # Check for output files
+        parts = sorted(OUTPUT_FOLDER.glob('part_*.mp4'))
         if not parts:
             return "No video parts were created", 500
 
-        # Zip all parts using original base name
+        # Create zip file
         zip_filename = f"{original_name}_parts.zip"
-        zip_path = os.path.join(OUTPUT_FOLDER, zip_filename)
+        zip_path = OUTPUT_FOLDER / zip_filename
+        
         try:
-            with zipfile.ZipFile(zip_path, 'w') as zipf:
+            with zipfile.ZipFile(str(zip_path), 'w') as zipf:
                 for part in parts:
-                    zipf.write(part, os.path.basename(part))
-        except (zipfile.BadZipFile, OSError) as e:
-            logger.error(f"Error creating zip file: {str(e)}")
+                    zipf.write(str(part), part.name)
+        except Exception as e:
+            logger.error(f"Error creating zip: {e}")
             return "Error creating zip file", 500
 
-        # List files: individual parts + zip
-        files = sorted([f for f in os.listdir(OUTPUT_FOLDER) if os.path.isfile(os.path.join(OUTPUT_FOLDER, f))])
+        # Clean up upload
+        try:
+            video_path.unlink()
+        except Exception as e:
+            logger.error(f"Error removing upload: {e}")
+
+        # Get final file list
+        files = sorted([f.name for f in OUTPUT_FOLDER.iterdir() if f.is_file()])
         return render_template('index.html', files=files)
 
     except Exception as e:
-        logger.error(f"Unexpected error in split_video: {str(e)}")
+        logger.error(f"Error in split_video: {e}")
         return "An unexpected error occurred", 500
 
 @app.route('/clear', methods=['POST'])
 def clear_all():
     try:
-        # First, close any open file handles
-        import gc
-        gc.collect()  # Force garbage collection to close any lingering file handles
-        
-        # Remove all uploads and outputs with retry mechanism
-        success = True
-        for folder in (UPLOAD_FOLDER, OUTPUT_FOLDER):
-            if not clean_folder(folder):
-                success = False
-                logger.error(f"Failed to clean folder: {folder}")
-        
-        if not success:
-            return "Some files could not be cleared", 500
-            
-        return redirect(url_for('index'))
+        # Clear both directories
+        upload_success = delete_directory_contents(UPLOAD_FOLDER)
+        output_success = delete_directory_contents(OUTPUT_FOLDER)
+
+        if not (upload_success and output_success):
+            return jsonify({'success': False}), 500
+
+        return jsonify({'success': True})
+
     except Exception as e:
-        logger.error(f"Error in clear_all: {str(e)}")
-        return "Error clearing files", 500
+        logger.error(f"Error in clear_all: {e}")
+        return jsonify({'success': False}), 500
 
 @app.route('/output/<filename>')
 def download_file(filename):
     try:
-        path = os.path.join(OUTPUT_FOLDER, filename)
-        if not os.path.exists(path):
+        file_path = OUTPUT_FOLDER / filename
+        if not file_path.exists() or not file_path.is_file():
             return "File not found", 404
-        if not os.path.isfile(path):
-            return "Not a file", 400
-        return send_file(path, as_attachment=True)
+        return send_file(str(file_path), as_attachment=True)
     except Exception as e:
-        logger.error(f"Error downloading file {filename}: {str(e)}")
+        logger.error(f"Error downloading file {filename}: {e}")
         return "Error downloading file", 500
 
 if __name__ == '__main__':
-    # Clean up any leftover files on startup
-    for folder in (UPLOAD_FOLDER, OUTPUT_FOLDER):
-        clean_folder(folder)
+    # Clear any leftover files on startup
+    delete_directory_contents(UPLOAD_FOLDER)
+    delete_directory_contents(OUTPUT_FOLDER)
     
     app.run(debug=True, host='0.0.0.0')
