@@ -1,7 +1,17 @@
 services:
   - type: web
-    name: video-splitter
+    name: modern-video-splitter
     env: python
-    plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.8.0
+      - key: MAX_CONTENT_LENGTH
+        value: 209715200  # 200MB in bytes
+    healthCheckPath: /
+    autoDeploy: true
+    disk:
+      name: uploads
+      mountPath: /uploads
+      sizeGB: 10

@@ -9,16 +9,19 @@ import logging
 from pathlib import Path
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 200 * 1024 * 1024  # 200 MB limit
+app.config['MAX_CONTENT_LENGTH'] = int(os.getenv('MAX_CONTENT_LENGTH', 200 * 1024 * 1024))  # Default 200MB
 
 # Ensure absolute paths
 BASE_DIR = Path(__file__).resolve().parent
-UPLOAD_FOLDER = BASE_DIR / 'uploads'
-OUTPUT_FOLDER = BASE_DIR / 'output'
+UPLOAD_FOLDER = Path(os.getenv('UPLOAD_FOLDER', BASE_DIR / 'uploads'))
+OUTPUT_FOLDER = Path(os.getenv('OUTPUT_FOLDER', BASE_DIR / 'output'))
 
 # Create folders if they don't exist
 UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
