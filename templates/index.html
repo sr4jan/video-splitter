@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Modern Video Splitter - Split your videos easily online" />
+    <title>Modern Video Splitter</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="/static/components.css" />
+    <script src="/static/app.js" defer></script>
+</head>
+<body>
+    <div class="app-container">
+        <header class="app-header">
+            <h1>📹 Video Splitter</h1>
+            <p class="subtitle">Split your videos into smaller parts easily</p>
+        </header>
+
+        <main class="app-main">
+            <div class="upload-container" id="dropZone">
+                <form id="uploadForm" action="/split" method="POST" enctype="multipart/form-data">
+                    <div class="upload-area">
+                        <div class="upload-icon">📤</div>
+                        <p>Drag and drop your video here or</p>
+                        <input type="file" name="video" id="videoInput" accept="video/*" required hidden />
+                        <button type="button" class="btn-secondary" onclick="document.getElementById('videoInput').click()">
+                            Choose File
+                        </button>
+                    </div>
+
+                    <div class="video-preview hidden" id="previewContainer">
+                        <video id="videoPreview" controls></video>
+                        <div class="video-info">
+                            <span id="fileName"></span>
+                            <span id="fileSize"></span>
+                            <span id="videoDuration"></span>
+                        </div>
+                    </div>
+
+                    <div class="settings-panel">
+                        <div class="field">
+                            <label for="duration">Duration per part (seconds)</label>
+                            <input type="number" 
+                                   id="duration" 
+                                   name="duration" 
+                                   min="1" 
+                                   max="3600"
+                                   value="10" 
+                                   required />
+                        </div>
+                    </div>
+
+                    <div class="buttons">
+                        <button class="btn-primary" type="submit" id="splitButton" disabled>
+                            Split Video
+                        </button>
+                        <!-- Separate form for clear functionality -->
+                        <form id="clearForm" action="/clear" method="POST" style="display: inline;">
+                            <button class="btn-secondary" type="submit" id="clearButton">
+                                Clear
+                            </button>
+                        </form>
+                    </div>
+                </form>
+            </div>
+
+            <div class="progress-container hidden" id="progressContainer">
+                <div class="progress-bar">
+                    <div class="progress" id="progressBar"></div>
+                </div>
+                <p id="progressText">Processing: 0%</p>
+            </div>
+
+            {% if files %}
+            <section class="downloads">
+                <h2>Downloads</h2>
+                <div class="files-grid">
+                    {% for f in files %}
+                    <div class="file-card">
+                        <div class="file-icon">🎥</div>
+                        <div class="file-info">
+                            <a href="{{ url_for('download_file', filename=f) }}" class="file-name">{{ f }}</a>
+                            <span class="file-meta">Click to download</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </section>
+            {% endif %}
+        </main>
+
+        <footer class="app-footer">
+            <p>© 2025 Modern Video Splitter. All rights reserved.</p>
+        </footer>
+    </div>
+</body>
+</html>
