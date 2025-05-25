@@ -1,151 +1,158 @@
-/* Video Preview */
-.video-preview {
-    margin: calc(var(--spacing-unit) * 3) 0;
-    border-radius: var(--border-radius);
-    overflow: hidden;
-    background: #000;
+/* Toast Notifications */
+.toast {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  padding: 1rem 1.5rem;
+  border-radius: var(--border-radius);
+  background: var(--surface);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  z-index: 1000;
+  animation: slideIn 0.3s ease-out;
 }
 
-.video-preview video {
-    width: 100%;
-    max-height: 400px;
-    object-fit: contain;
+.toast.success {
+  background: var(--success-color);
+  color: white;
 }
 
-.video-info {
-    padding: calc(var(--spacing-unit) * 2);
-    background: rgba(0, 0, 0, 0.8);
-    color: white;
-    display: flex;
-    justify-content: space-between;
-    font-size: 0.9rem;
+.toast.error {
+  background: var(--error-color);
+  color: white;
 }
 
-/* Progress Bar */
-.progress-container {
-    margin: calc(var(--spacing-unit) * 3) 0;
+/* Tooltips */
+[data-tooltip] {
+  position: relative;
 }
 
-.progress-bar {
-    height: 8px;
-    background: #eee;
-    border-radius: 4px;
-    overflow: hidden;
+[data-tooltip]:before {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0.5rem 1rem;
+  background: var(--text-primary);
+  color: var(--surface);
+  border-radius: var(--border-radius);
+  font-size: 0.875rem;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  transition: var(--transition);
 }
 
-.progress {
-    height: 100%;
-    background: var(--primary-gradient);
-    width: 0%;
-    transition: width 0.3s ease;
+[data-tooltip]:hover:before {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(-8px);
 }
 
-#progressText {
-    text-align: center;
-    margin-top: var(--spacing-unit);
-    color: var(--text-secondary);
+/* Badges */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
-/* Downloads Section */
-.downloads {
-    margin-top: calc(var(--spacing-unit) * 4);
+.badge-primary {
+  background: var(--primary-color);
+  color: white;
 }
 
-.downloads h2 {
-    margin-bottom: calc(var(--spacing-unit) * 3);
-    color: var(--text-primary);
-    font-size: 1.5rem;
+.badge-secondary {
+  background: #e2e8f0;
+  color: var(--text-primary);
 }
 
-.files-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-    gap: calc(var(--spacing-unit) * 2);
+/* File Upload Progress */
+.upload-progress {
+  position: relative;
+  height: 4px;
+  background: #e2e8f0;
+  border-radius: 999px;
+  overflow: hidden;
+  margin: 1rem 0;
 }
 
-.file-card {
-    background: var(--surface-color);
-    border: 1px solid #eee;
-    border-radius: var(--border-radius);
-    padding: calc(var(--spacing-unit) * 2);
-    display: flex;
-    align-items: center;
-    gap: calc(var(--spacing-unit) * 2);
-    transition: all 0.3s ease;
+.upload-progress-bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  background: linear-gradient(90deg, var(--primary-color), var(--primary-light));
+  transition: width 0.3s ease;
 }
 
-.file-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+/* Skeleton Loading */
+.skeleton {
+  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s infinite;
 }
 
-.file-icon {
-    font-size: 2rem;
+@keyframes skeleton-loading {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 
-.file-info {
-    flex: 1;
+/* Ripple Effect */
+.ripple {
+  position: relative;
+  overflow: hidden;
 }
 
-.file-name {
-    color: var(--primary-color);
-    text-decoration: none;
-    font-weight: 500;
-    display: block;
-    margin-bottom: 4px;
+.ripple:after {
+  content: "";
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  background-image: radial-gradient(circle, #fff 10%, transparent 10.01%);
+  background-repeat: no-repeat;
+  background-position: 50%;
+  transform: scale(10, 10);
+  opacity: 0;
+  transition: transform 0.5s, opacity 1s;
 }
 
-.file-meta {
-    font-size: 0.85rem;
-    color: var(--text-secondary);
+.ripple:active:after {
+  transform: scale(0, 0);
+  opacity: 0.3;
+  transition: 0s;
 }
 
-/* Utility Classes */
-.hidden {
-    display: none !important;
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
 }
 
-/* Responsive Design */
-@media (max-width: 768px) {
-    .app-container {
-        padding: calc(var(--spacing-unit) * 2);
-    }
-
-    .app-header h1 {
-        font-size: 2rem;
-    }
-
-    .buttons {
-        flex-direction: column;
-    }
-
-    .btn-primary,
-    .btn-secondary {
-        width: 100%;
-    }
+::-webkit-scrollbar-track {
+  background: var(--background);
 }
 
-/* Animations */
-@keyframes fadeIn {
-    from {
-        opacity: 0;
-        transform: translateY(10px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+::-webkit-scrollbar-thumb {
+  background: var(--primary-color);
+  border-radius: 4px;
 }
 
-.fade-in {
-    animation: fadeIn 0.3s ease forwards;
-}
-/* Add this to your existing CSS */
-#clearForm {
-    flex: 1;
-    margin: 0;
-}
-
-#clearForm button {
-    width: 100%;
+::-webkit-scrollbar-thumb:hover {
+  background: var(--primary-dark);
 }

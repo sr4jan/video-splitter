@@ -13,6 +13,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const progressContainer = document.getElementById('progressContainer');
     const progressBar = document.getElementById('progressBar');
     const progressText = document.getElementById('progressText');
+    const downloadsSection = document.querySelector('.downloads');  // Add this line
 
     // Drag and drop functionality
     ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
@@ -38,8 +39,58 @@ document.addEventListener('DOMContentLoaded', () => {
 
     dropZone.addEventListener('drop', handleDrop);
     videoInput.addEventListener('change', handleFileSelect);
-    clearForm.addEventListener('submit', handleClear);
-    uploadForm.addEventListener('submit', handleSubmit);
+    
+    // Update clear form handling
+    clearForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        try {
+            const response = await fetch('/clear', {
+                method: 'POST',
+            });
+            
+            if (!response.ok) {
+                throw new Error('Clear request failed');
+            }
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                // Clear the form and UI
+                uploadForm.reset();
+                if (videoPreview.src) {
+                    URL.revokeObjectURL(videoPreview.src);
+                    videoPreview.src = '';
+                }
+                previewContainer.classList.add('hidden');
+                splitButton.disabled = true;
+                progressContainer.classList.add('hidden');
+                progressBar.style.width = '0%';
+                progressText.textContent = 'Processing: 0%';
+                
+                // Remove downloads section if it exists
+                if (downloadsSection) {
+                    downloadsSection.remove();
+                }
+                
+                // Show success message
+                const message = document.createElement('div');
+                message.className = 'success-message';
+                message.textContent = 'Files cleared successfully';
+                document.querySelector('.app-main').appendChild(message);
+                
+                // Remove success message after 3 seconds
+                setTimeout(() => {
+                    message.remove();
+                }, 3000);
+            } else {
+                throw new Error('Failed to clear files');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Failed to clear files');
+        }
+    });
 
     function handleDrop(e) {
         const dt = e.dataTransfer;
@@ -87,44 +138,10 @@ document.addEventListener('DOMContentLoaded', () => {
         return `${minutes}:${seconds.toString().padStart(2, '0')}`;
     }
 
-    function handleClear(e) {
+    // Handle form submission
+    uploadForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         
-        fetch('/clear', {
-            method: 'POST',
-        })
-        .then(response => {
-            if (response.ok) {
-                clearFormUI();
-                // Reload the page to reflect the cleared state
-                window.location.reload();
-            } else {
-                throw new Error('Failed to clear');
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            alert('Failed to clear files');
-        });
-    }
-
-    function clearFormUI() {
-        uploadForm.reset();
-        previewContainer.classList.add('hidden');
-        splitButton.disabled = true;
-        progressContainer.classList.add('hidden');
-        progressBar.style.width = '0%';
-        progressText.textContent = 'Processing: 0%';
-        
-        if (videoPreview.src) {
-            URL.revokeObjectURL(videoPreview.src);
-            videoPreview.src = '';
-        }
-    }
-
-    async function handleSubmit(e) {
-        e.preventDefault();
-
         const formData = new FormData(uploadForm);
         splitButton.disabled = true;
         progressContainer.classList.remove('hidden');
@@ -139,29 +156,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error('Network response was not ok');
             }
 
-            // Show progress updates
-            const reader = response.body.getReader();
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-
-                const progress = new TextDecoder().decode(value);
-                updateProgress(progress);
-            }
-
-            // Reload page to show new files
-            window.location.reload();
+            const html = await response.text();
+            
+            // Replace the entire page content
+            document.documentElement.innerHTML = html;
+            
+            // Reinitialize the JavaScript since we replaced the entire page
+            location.reload();
         } catch (error) {
             console.error('Error:', error);
             alert('An error occurred while processing the video');
-        } finally {
             splitButton.disabled = false;
         }
-    }
-
-    function updateProgress(progress) {
-        const percent = parseInt(progress);
-        progressBar.style.width = `${percent}%`;
-        progressText.textContent = `Processing: ${percent}%`;
-    }
+    });
 });
