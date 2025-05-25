@@ -1,17 +1,21 @@
 services:
   - type: web
-    name: modern-video-splitter
+    name: video-splitter
     env: python
-    buildCommand: pip install -r requirements.txt
+    buildCommand: |
+      # Install FFmpeg
+      apt-get update && apt-get install -y ffmpeg
+      # Install Python dependencies
+      pip install -r requirements.txt
     startCommand: gunicorn app:app
     envVars:
       - key: PYTHON_VERSION
-        value: 3.8.0
+        value: 3.11.0
       - key: MAX_CONTENT_LENGTH
         value: 209715200  # 200MB in bytes
     healthCheckPath: /
     autoDeploy: true
     disk:
       name: uploads
-      mountPath: /uploads
+      mountPath: /app/uploads
       sizeGB: 10
