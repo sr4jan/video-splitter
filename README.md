@@ -1,6 +1,6 @@
 # Video Splitter 📹
 
-A Flask-based web application that allows users to split video files into smaller segments of equal duration.
+A Flask-based web application that allows users to split video files into smaller segments of equal duration. Try it live at [https://video-splitter-fbxx.onrender.com/](https://video-splitter-fbxx.onrender.com/)
 
 ![Version](https://img.shields.io/badge/version-1.0.0-blue)
 ![Python](https://img.shields.io/badge/python-3.8%2B-blue)
@@ -15,6 +15,9 @@ A Flask-based web application that allows users to split video files into smalle
 - 👀 Video preview before splitting
 - 📊 Progress tracking during processing
 - 🔒 Secure file handling
+- 👤 Session-based user management
+- 🔐 Private file access per session
+- ⏲️ Automatic session cleanup
 
 ## Prerequisites
 
@@ -132,7 +135,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## Author
 
-Created by sr4jan on 2025-05-25
+Created by Srajan Soni on 2025-05-25
 
 ## Acknowledgments
 
