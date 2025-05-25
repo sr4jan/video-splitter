@@ -1,167 +1,93 @@
-document.addEventListener('DOMContentLoaded', () => {
-    const dropZone = document.getElementById('dropZone');
-    const videoInput = document.getElementById('videoInput');
+document.addEventListener('DOMContentLoaded', function() {
     const uploadForm = document.getElementById('uploadForm');
-    const clearForm = document.getElementById('clearForm');
-    const previewContainer = document.getElementById('previewContainer');
-    const videoPreview = document.getElementById('videoPreview');
-    const fileName = document.getElementById('fileName');
-    const fileSize = document.getElementById('fileSize');
-    const videoDuration = document.getElementById('videoDuration');
+    const videoInput = document.getElementById('videoInput');
     const splitButton = document.getElementById('splitButton');
     const clearButton = document.getElementById('clearButton');
-    const progressContainer = document.getElementById('progressContainer');
+    const loadingIndicator = document.getElementById('loadingIndicator');
     const progressBar = document.getElementById('progressBar');
-    const progressText = document.getElementById('progressText');
-
-    // Drag and drop functionality
-    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-        dropZone.addEventListener(eventName, preventDefaults, false);
-    });
-
-    function preventDefaults(e) {
-        e.preventDefault();
-        e.stopPropagation();
+    
+    // Detect mobile device
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    
+    if (isMobile) {
+        // Adjust file input for mobile
+        videoInput.accept = "video/*;capture=camcorder";
+        // Remove drag and drop for mobile
+        document.getElementById('dropZone').classList.add('mobile');
     }
 
-    ['dragenter', 'dragover'].forEach(eventName => {
-        dropZone.addEventListener(eventName, () => {
-            dropZone.classList.add('highlight');
-        });
-    });
-
-    ['dragleave', 'drop'].forEach(eventName => {
-        dropZone.addEventListener(eventName, () => {
-            dropZone.classList.remove('highlight');
-        });
-    });
-
-    dropZone.addEventListener('drop', handleDrop);
-    videoInput.addEventListener('change', handleFileSelect);
-    clearForm.addEventListener('submit', handleClear);
-    uploadForm.addEventListener('submit', handleSubmit);
-
-    function handleDrop(e) {
-        const dt = e.dataTransfer;
-        const file = dt.files[0];
-        handleFile(file);
-    }
-
-    function handleFileSelect(e) {
+    // Handle file selection
+    videoInput.addEventListener('change', function(e) {
         const file = e.target.files[0];
-        handleFile(file);
-    }
-
-    function handleFile(file) {
-        if (file && file.type.startsWith('video/')) {
-            // Update file info
-            fileName.textContent = file.name;
-            fileSize.textContent = formatFileSize(file.size);
-
-            // Create video preview
-            const videoURL = URL.createObjectURL(file);
-            videoPreview.src = videoURL;
-            previewContainer.classList.remove('hidden');
-
+        if (file) {
+            // Validate file size
+            const maxSize = 200 * 1024 * 1024; // 200MB
+            if (file.size > maxSize) {
+                alert('File size must be less than 200MB');
+                this.value = '';
+                return;
+            }
+            
             // Enable split button
             splitButton.disabled = false;
-
-            // Get video duration
-            videoPreview.addEventListener('loadedmetadata', () => {
-                videoDuration.textContent = formatDuration(videoPreview.duration);
-            });
+            
+            // Show file info
+            document.getElementById('fileName').textContent = file.name;
+            document.getElementById('fileSize').textContent = 
+                (file.size / (1024 * 1024)).toFixed(2) + ' MB';
         }
-    }
+    });
 
-    function formatFileSize(bytes) {
-        if (bytes === 0) return '0 Bytes';
-        const k = 1024;
-        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-    }
+    // Handle form submission
+    uploadForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        // Show loading state
+        loadingIndicator.style.display = 'block';
+        splitButton.disabled = true;
+        
+        // Submit form
+        const formData = new FormData(this);
+        
+        fetch('/split', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.text();
+        })
+        .then(html => {
+            // Replace page content with new HTML
+            document.documentElement.innerHTML = html;
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Error processing video. Please try again.');
+        })
+        .finally(() => {
+            loadingIndicator.style.display = 'none';
+            splitButton.disabled = false;
+        });
+    });
 
-    function formatDuration(seconds) {
-        const minutes = Math.floor(seconds / 60);
-        seconds = Math.floor(seconds % 60);
-        return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-    }
-
-    function handleClear(e) {
+    // Handle clear button
+    clearButton?.addEventListener('click', function(e) {
         e.preventDefault();
         
         fetch('/clear', {
-            method: 'POST',
+            method: 'POST'
         })
         .then(response => {
             if (response.ok) {
-                clearFormUI();
-                // Reload the page to reflect the cleared state
                 window.location.reload();
-            } else {
-                throw new Error('Failed to clear');
             }
         })
         .catch(error => {
             console.error('Error:', error);
-            alert('Failed to clear files');
+            alert('Error clearing files');
         });
-    }
-
-    function clearFormUI() {
-        uploadForm.reset();
-        previewContainer.classList.add('hidden');
-        splitButton.disabled = true;
-        progressContainer.classList.add('hidden');
-        progressBar.style.width = '0%';
-        progressText.textContent = 'Processing: 0%';
-        
-        if (videoPreview.src) {
-            URL.revokeObjectURL(videoPreview.src);
-            videoPreview.src = '';
-        }
-    }
-
-    async function handleSubmit(e) {
-        e.preventDefault();
-
-        const formData = new FormData(uploadForm);
-        splitButton.disabled = true;
-        progressContainer.classList.remove('hidden');
-
-        try {
-            const response = await fetch('/split', {
-                method: 'POST',
-                body: formData
-            });
-
-            if (!response.ok) {
-                throw new Error('Network response was not ok');
-            }
-
-            // Show progress updates
-            const reader = response.body.getReader();
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-
-                const progress = new TextDecoder().decode(value);
-                updateProgress(progress);
-            }
-
-            // Reload page to show new files
-            window.location.reload();
-        } catch (error) {
-            console.error('Error:', error);
-            alert('An error occurred while processing the video');
-        } finally {
-            splitButton.disabled = false;
-        }
-    }
-
-    function updateProgress(progress) {
-        const percent = parseInt(progress);
-        progressBar.style.width = `${percent}%`;
-        progressText.textContent = `Processing: ${percent}%`;
-    }
+    });
 });

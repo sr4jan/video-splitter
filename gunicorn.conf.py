@@ -9,7 +9,7 @@ backlog = 2048
 workers = multiprocessing.cpu_count() * 2 + 1
 worker_class = 'sync'
 worker_connections = 1000
-timeout = 30
+timeout = 300  # Increased timeout to 5 minutes
 keepalive = 2
 
 # Logging
@@ -28,6 +28,11 @@ user = None
 group = None
 tmp_upload_dir = None
 
-# SSL
-keyfile = None
-certfile = None
+# Larger buffer size for file uploads
+worker_tmp_dir = '/tmp'
+max_requests = 1000
+max_requests_jitter = 50
+
+# Increase timeouts
+graceful_timeout = 300
+keep_alive = 5

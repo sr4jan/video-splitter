@@ -7,6 +7,7 @@ import zipfile
 import shutil
 import logging
 from pathlib import Path
+import tempfile
 
 # Configure logging
 logging.basicConfig(
@@ -16,7 +17,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = int(os.getenv('MAX_CONTENT_LENGTH', 200 * 1024 * 1024))  # Default 200MB
+app.config['MAX_CONTENT_LENGTH'] = int(os.getenv('MAX_CONTENT_LENGTH', 200 * 1024 * 1024))
+app.config['UPLOAD_CHUNK_SIZE'] = 8 * 1024 * 1024  # 8MB chunks
 
 # Ensure absolute paths
 BASE_DIR = Path(__file__).resolve().parent
@@ -27,24 +29,15 @@ OUTPUT_FOLDER = Path(os.getenv('OUTPUT_FOLDER', BASE_DIR / 'output'))
 UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
 OUTPUT_FOLDER.mkdir(parents=True, exist_ok=True)
 
-def delete_directory_contents(directory):
-    """Delete all files and subdirectories in the given directory."""
-    directory = Path(directory)
-    try:
-        if directory.exists():
-            for item in directory.iterdir():
-                if item.is_file():
-                    item.unlink()
-                elif item.is_dir():
-                    shutil.rmtree(item)
-        return True
-    except Exception as e:
-        logger.error(f"Error clearing directory {directory}: {e}")
-        return False
+def safe_filename(filename):
+    """Generate a safe filename that works on all platforms"""
+    # Remove problematic characters
+    filename = "".join(c for c in filename if c.isalnum() or c in (' ', '-', '_', '.'))
+    return filename
 
 @app.route('/')
 def index():
-    # Get list of files in output directory
+    """Root route to display the main page"""
     try:
         files = []
         if OUTPUT_FOLDER.exists():
@@ -52,14 +45,21 @@ def index():
         return render_template('index.html', files=files)
     except Exception as e:
         logger.error(f"Error in index route: {e}")
-        return render_template('index.html', files=[])
+        return "Error loading page", 500
 
 @app.route('/split', methods=['POST'])
 def split_video():
     try:
-        # Clear existing files first
-        delete_directory_contents(UPLOAD_FOLDER)
-        delete_directory_contents(OUTPUT_FOLDER)
+        # Clean up old files
+        for folder in (UPLOAD_FOLDER, OUTPUT_FOLDER):
+            for item in Path(folder).glob('*'):
+                try:
+                    if item.is_file():
+                        item.unlink()
+                    elif item.is_dir():
+                        shutil.rmtree(item)
+                except Exception as e:
+                    logger.error(f"Cleanup error: {e}")
 
         if 'video' not in request.files:
             return "No video file uploaded", 400
@@ -75,36 +75,50 @@ def split_video():
         except (KeyError, ValueError):
             return "Invalid duration value", 400
 
-        # Save upload with safe filename
-        original_name = Path(video.filename).stem
-        filename = f"{uuid.uuid4().hex}_{Path(video.filename).name.replace(' ', '_')}"
-        video_path = UPLOAD_FOLDER / filename
-        
-        video.save(str(video_path))
+        # Create a temporary file for upload
+        with tempfile.NamedTemporaryFile(delete=False, suffix=Path(video.filename).suffix) as tmp_file:
+            # Save upload in chunks
+            while True:
+                chunk = video.read(app.config['UPLOAD_CHUNK_SIZE'])
+                if not chunk:
+                    break
+                tmp_file.write(chunk)
+            tmp_file.flush()
+            
+            # Process video
+            original_name = safe_filename(Path(video.filename).stem)
+            output_pattern = str(OUTPUT_FOLDER / f'part_%03d.mp4')
+            
+            cmd = [
+                'ffmpeg', '-y',
+                '-i', tmp_file.name,
+                '-c', 'copy',
+                '-map', '0',
+                '-f', 'segment',
+                '-segment_time', str(duration),
+                '-reset_timestamps', '1',
+                output_pattern
+            ]
 
-        # Split using FFmpeg
-        segment_pattern = str(OUTPUT_FOLDER / 'part_%03d.mp4')
-        cmd = [
-            'ffmpeg', '-y',
-            '-i', str(video_path),
-            '-c', 'copy',
-            '-map', '0',
-            '-f', 'segment',
-            '-segment_time', str(duration),
-            '-reset_timestamps', '1',
-            segment_pattern
-        ]
-
-        try:
-            process = subprocess.run(
-                cmd,
-                check=True,
-                capture_output=True,
-                text=True
-            )
-        except subprocess.CalledProcessError as e:
-            logger.error(f"FFmpeg error: {e.stderr}")
-            return "Error processing video", 500
+            try:
+                process = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=240  # 4 minute timeout
+                )
+                process.check_returncode()
+            except subprocess.TimeoutExpired:
+                return "Video processing timeout", 504
+            except subprocess.CalledProcessError as e:
+                logger.error(f"FFmpeg error: {e.stderr}")
+                return "Error processing video", 500
+            finally:
+                # Clean up temp file
+                try:
+                    os.unlink(tmp_file.name)
+                except:
+                    pass
 
         # Check for output files
         parts = sorted(OUTPUT_FOLDER.glob('part_*.mp4'))
@@ -123,12 +137,6 @@ def split_video():
             logger.error(f"Error creating zip: {e}")
             return "Error creating zip file", 500
 
-        # Clean up upload
-        try:
-            video_path.unlink()
-        except Exception as e:
-            logger.error(f"Error removing upload: {e}")
-
         # Get final file list
         files = sorted([f.name for f in OUTPUT_FOLDER.iterdir() if f.is_file()])
         return render_template('index.html', files=files)
@@ -139,34 +147,52 @@ def split_video():
 
 @app.route('/clear', methods=['POST'])
 def clear_all():
+    """Clear all uploaded and generated files"""
     try:
-        # Clear both directories
-        upload_success = delete_directory_contents(UPLOAD_FOLDER)
-        output_success = delete_directory_contents(OUTPUT_FOLDER)
-
-        if not (upload_success and output_success):
-            return jsonify({'success': False}), 500
-
+        # Clean both directories
+        for folder in (UPLOAD_FOLDER, OUTPUT_FOLDER):
+            for item in Path(folder).glob('*'):
+                try:
+                    if item.is_file():
+                        item.unlink()
+                    elif item.is_dir():
+                        shutil.rmtree(item)
+                except Exception as e:
+                    logger.error(f"Error clearing {item}: {e}")
+                    return jsonify({'success': False}), 500
+        
         return jsonify({'success': True})
-
     except Exception as e:
         logger.error(f"Error in clear_all: {e}")
         return jsonify({'success': False}), 500
 
 @app.route('/output/<filename>')
 def download_file(filename):
+    """Download a processed file"""
     try:
         file_path = OUTPUT_FOLDER / filename
         if not file_path.exists() or not file_path.is_file():
             return "File not found", 404
-        return send_file(str(file_path), as_attachment=True)
+            
+        return send_file(
+            str(file_path),
+            as_attachment=True,
+            download_name=filename
+        )
     except Exception as e:
-        logger.error(f"Error downloading file {filename}: {e}")
+        logger.error(f"Error downloading {filename}: {e}")
         return "Error downloading file", 500
 
 if __name__ == '__main__':
     # Clear any leftover files on startup
-    delete_directory_contents(UPLOAD_FOLDER)
-    delete_directory_contents(OUTPUT_FOLDER)
+    for folder in (UPLOAD_FOLDER, OUTPUT_FOLDER):
+        for item in Path(folder).glob('*'):
+            try:
+                if item.is_file():
+                    item.unlink()
+                elif item.is_dir():
+                    shutil.rmtree(item)
+            except Exception as e:
+                logger.error(f"Startup cleanup error: {e}")
     
     app.run(debug=True, host='0.0.0.0')
